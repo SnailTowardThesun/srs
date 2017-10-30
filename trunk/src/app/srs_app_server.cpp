@@ -139,9 +139,9 @@ SrsBufferListener::~SrsBufferListener()
     srs_freep(listener);
 }
 
-int SrsBufferListener::listen(string i, int p)
+srs_error_t SrsBufferListener::listen(string i, int p)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     ip = i;
     port = p;
@@ -149,30 +149,25 @@ int SrsBufferListener::listen(string i, int p)
     srs_freep(listener);
     listener = new SrsTcpListener(this, ip, port);
     
-    if ((ret = listener->listen()) != ERROR_SUCCESS) {
-        srs_error("tcp listen failed. ret=%d", ret);
-        return ret;
+    if ((err = listener->listen()) != srs_success) {
+        return srs_error_wrap(err, "buffered tcp listen");
     }
     
-    srs_info("listen thread current_cid=%d, "
-             "listen at port=%d, type=%d, fd=%d started success, ep=%s:%d",
-             _srs_context->get_id(), p, type, listener->fd(), i.c_str(), p);
+    string v = srs_listener_type2string(type);
+    srs_trace("%s listen at tcp://%s:%d, fd=%d", v.c_str(), ip.c_str(), port, listener->fd());
     
-    srs_trace("%s listen at tcp://%s:%d, fd=%d", srs_listener_type2string(type).c_str(), ip.c_str(), port, listener->fd());
-    
-    return ret;
+    return err;
 }
 
-int SrsBufferListener::on_tcp_client(srs_netfd_t stfd)
+srs_error_t SrsBufferListener::on_tcp_client(srs_netfd_t stfd)
 {
-    int ret = ERROR_SUCCESS;
-    
-    if ((ret = server->accept_client(type, stfd)) != ERROR_SUCCESS) {
-        srs_warn("accept client error. ret=%d", ret);
-        return ret;
+    srs_error_t err = server->accept_client(type, stfd);
+    if (err != srs_success) {
+        srs_warn("accept client failed, err is %s", srs_error_desc(err).c_str());
+        srs_freep(err);
     }
     
-    return ret;
+    return srs_success;
 }
 
 #ifdef SRS_AUTO_STREAM_CASTER
@@ -194,9 +189,9 @@ SrsRtspListener::~SrsRtspListener()
     srs_freep(listener);
 }
 
-int SrsRtspListener::listen(string i, int p)
+srs_error_t SrsRtspListener::listen(string i, int p)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     // the caller already ensure the type is ok,
     // we just assert here for unknown stream caster.
@@ -208,27 +203,25 @@ int SrsRtspListener::listen(string i, int p)
     srs_freep(listener);
     listener = new SrsTcpListener(this, ip, port);
     
-    if ((ret = listener->listen()) != ERROR_SUCCESS) {
-        srs_error("rtsp caster listen failed. ret=%d", ret);
-        return ret;
+    if ((err = listener->listen()) != srs_success) {
+        return srs_error_wrap(err, "rtsp listen %s:%d", ip.c_str(), port);
     }
-    srs_info("listen thread listen at port=%d, type=%d, fd=%d started success, ep=%s:%d", port, type, listener->fd(), ip.c_str(), port);
     
-    srs_trace("%s listen at tcp://%s:%d, fd=%d", srs_listener_type2string(type).c_str(), ip.c_str(), port, listener->fd());
+    string v = srs_listener_type2string(type);
+    srs_trace("%s listen at tcp://%s:%d, fd=%d", v.c_str(), ip.c_str(), port, listener->fd());
     
-    return ret;
+    return err;
 }
 
-int SrsRtspListener::on_tcp_client(srs_netfd_t stfd)
+srs_error_t SrsRtspListener::on_tcp_client(srs_netfd_t stfd)
 {
-    int ret = ERROR_SUCCESS;
-    
-    if ((ret = caster->on_tcp_client(stfd)) != ERROR_SUCCESS) {
-        srs_warn("accept client error. ret=%d", ret);
-        return ret;
+    srs_error_t err = caster->on_tcp_client(stfd);
+    if (err != srs_success) {
+        srs_warn("accept client failed, err is %s", srs_error_desc(err).c_str());
+        srs_freep(err);
     }
     
-    return ret;
+    return srs_success;
 }
 
 SrsHttpFlvListener::SrsHttpFlvListener(SrsServer* svr, SrsListenerType t, SrsConfDirective* c) : SrsListener(svr, t)
@@ -249,9 +242,9 @@ SrsHttpFlvListener::~SrsHttpFlvListener()
     srs_freep(listener);
 }
 
-int SrsHttpFlvListener::listen(string i, int p)
+srs_error_t SrsHttpFlvListener::listen(string i, int p)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     // the caller already ensure the type is ok,
     // we just assert here for unknown stream caster.
@@ -260,35 +253,32 @@ int SrsHttpFlvListener::listen(string i, int p)
     ip = i;
     port = p;
     
-    if ((ret = caster->initialize()) != ERROR_SUCCESS) {
-        return ret;
+    if ((err = caster->initialize()) != srs_success) {
+        return srs_error_wrap(err, "init caster %s:%d", ip.c_str(), port);
     }
     
     srs_freep(listener);
     listener = new SrsTcpListener(this, ip, port);
     
-    if ((ret = listener->listen()) != ERROR_SUCCESS) {
-        srs_error("flv caster listen failed. ret=%d", ret);
-        return ret;
+    if ((err = listener->listen()) != srs_success) {
+        return srs_error_wrap(err, "listen");
     }
     
-    srs_info("listen thread listen at port=%d, type=%d, fd=%d started success, ep=%s:%d", port, type, listener->fd(), ip.c_str(), port);
+    string v = srs_listener_type2string(type);
+    srs_trace("%s listen at tcp://%s:%d, fd=%d", v.c_str(), ip.c_str(), port, listener->fd());
     
-    srs_trace("%s listen at tcp://%s:%d, fd=%d", srs_listener_type2string(type).c_str(), ip.c_str(), port, listener->fd());
-    
-    return ret;
+    return err;
 }
 
-int SrsHttpFlvListener::on_tcp_client(srs_netfd_t stfd)
+srs_error_t SrsHttpFlvListener::on_tcp_client(srs_netfd_t stfd)
 {
-    int ret = ERROR_SUCCESS;
-    
-    if ((ret = caster->on_tcp_client(stfd)) != ERROR_SUCCESS) {
-        srs_warn("accept client error. ret=%d", ret);
-        return ret;
+    srs_error_t err = caster->on_tcp_client(stfd);
+    if (err != srs_success) {
+        srs_warn("accept client failed, err is %s", srs_error_desc(err).c_str());
+        srs_freep(err);
     }
     
-    return ret;
+    return err;
 }
 #endif
 
@@ -303,9 +293,9 @@ SrsUdpStreamListener::~SrsUdpStreamListener()
     srs_freep(listener);
 }
 
-int SrsUdpStreamListener::listen(string i, int p)
+srs_error_t SrsUdpStreamListener::listen(string i, int p)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     // the caller already ensure the type is ok,
     // we just assert here for unknown stream caster.
@@ -317,24 +307,19 @@ int SrsUdpStreamListener::listen(string i, int p)
     srs_freep(listener);
     listener = new SrsUdpListener(caster, ip, port);
     
-    if ((ret = listener->listen()) != ERROR_SUCCESS) {
-        srs_error("udp caster listen failed. ret=%d", ret);
-        return ret;
+    if ((err = listener->listen()) != srs_success) {
+        return srs_error_wrap(err, "listen %s:%d", ip.c_str(), port);
     }
-    
-    srs_info("listen thread current_cid=%d, "
-             "listen at port=%d, type=%d, fd=%d started success, ep=%s:%d",
-             _srs_context->get_id(), p, type, listener->fd(), i.c_str(), p);
     
     // notify the handler the fd changed.
-    if ((ret = caster->on_stfd_change(listener->stfd())) != ERROR_SUCCESS) {
-        srs_error("notify handler fd changed. ret=%d", ret);
-        return ret;
+    if ((err = caster->on_stfd_change(listener->stfd())) != srs_success) {
+        return srs_error_wrap(err, "notify fd change failed");
     }
     
-    srs_trace("%s listen at udp://%s:%d, fd=%d", srs_listener_type2string(type).c_str(), ip.c_str(), port, listener->fd());
+    string v = srs_listener_type2string(type);
+    srs_trace("%s listen at udp://%s:%d, fd=%d", v.c_str(), ip.c_str(), port, listener->fd());
     
-    return ret;
+    return err;
 }
 
 #ifdef SRS_AUTO_STREAM_CASTER
@@ -1044,7 +1029,7 @@ srs_error_t SrsServer::do_cycle()
 
 srs_error_t SrsServer::listen_rtmp()
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     // stream service port.
     std::vector<std::string> ip_ports = _srs_config->get_listens();
@@ -1060,17 +1045,17 @@ srs_error_t SrsServer::listen_rtmp()
         int port;
         srs_parse_endpoint(ip_ports[i], ip, port);
         
-        if ((ret = listener->listen(ip, port)) != ERROR_SUCCESS) {
-            srs_error_new(ret, "rtmp listen %s:%d", ip.c_str(), port);
+        if ((err = listener->listen(ip, port)) != srs_success) {
+            srs_error_wrap(err, "rtmp listen %s:%d", ip.c_str(), port);
         }
     }
     
-    return srs_success;
+    return err;
 }
 
 srs_error_t SrsServer::listen_http_api()
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     close_listeners(SrsListenerHttpApi);
     if (_srs_config->get_http_api_enabled()) {
@@ -1083,17 +1068,17 @@ srs_error_t SrsServer::listen_http_api()
         int port;
         srs_parse_endpoint(ep, ip, port);
         
-        if ((ret = listener->listen(ip, port)) != ERROR_SUCCESS) {
-            return srs_error_new(ret, "http api listen %s:%d", ip.c_str(), port);
+        if ((err = listener->listen(ip, port)) != srs_success) {
+            return srs_error_wrap(err, "http api listen %s:%d", ip.c_str(), port);
         }
     }
     
-    return srs_success;
+    return err;
 }
 
 srs_error_t SrsServer::listen_http_stream()
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     close_listeners(SrsListenerHttpStream);
     if (_srs_config->get_http_stream_enabled()) {
@@ -1106,17 +1091,17 @@ srs_error_t SrsServer::listen_http_stream()
         int port;
         srs_parse_endpoint(ep, ip, port);
         
-        if ((ret = listener->listen(ip, port)) != ERROR_SUCCESS) {
-            return srs_error_new(ret, "http stream listen %s:%d", ip.c_str(), port);
+        if ((err = listener->listen(ip, port)) != srs_success) {
+            return srs_error_wrap(err, "http stream listen %s:%d", ip.c_str(), port);
         }
     }
     
-    return srs_success;
+    return err;
 }
 
 srs_error_t SrsServer::listen_stream_caster()
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
 #ifdef SRS_AUTO_STREAM_CASTER
     close_listeners(SrsListenerMpegTsOverUdp);
@@ -1152,13 +1137,13 @@ srs_error_t SrsServer::listen_stream_caster()
         }
         
         // TODO: support listen at <[ip:]port>
-        if ((ret = listener->listen("0.0.0.0", port)) != ERROR_SUCCESS) {
-            return srs_error_new(ret, "listen at %d", port);
+        if ((err = listener->listen(srs_any_address4listener(), port)) != srs_success) {
+            return srs_error_wrap(err, "listen at %d", port);
         }
     }
 #endif
     
-    return srs_success;
+    return err;
 }
 
 void SrsServer::close_listeners(SrsListenerType type)
@@ -1198,40 +1183,27 @@ void SrsServer::resample_kbps()
     srs_update_rtmp_server((int)conns.size(), kbps);
 }
 
-int SrsServer::accept_client(SrsListenerType type, srs_netfd_t stfd)
+srs_error_t SrsServer::accept_client(SrsListenerType type, srs_netfd_t stfd)
 {
-    int ret = ERROR_SUCCESS;
     srs_error_t err = srs_success;
     
     SrsConnection* conn = NULL;
     
     if ((err = fd2conn(type, stfd, &conn)) != srs_success) {
-        srs_error("accept client failed, err=%s", srs_error_desc(err).c_str());
-        // TODO: FIXME: Use error
-        ret = srs_error_code(err);
-        srs_freep(err);
-        
-        srs_close_stfd(stfd);
-        return ERROR_SUCCESS;
+        return srs_error_wrap(err, "fd2conn");
     }
     srs_assert(conn);
     
     // directly enqueue, the cycle thread will remove the client.
     conns.push_back(conn);
-    srs_verbose("add conn to vector.");
     
     // cycle will start process thread and when finished remove the client.
     // @remark never use the conn, for it maybe destroyed.
     if ((err = conn->start()) != srs_success) {
-        // TODO: FIXME: Use error
-        ret = srs_error_code(err);
-        srs_freep(err);
-
-        return ret;
+        return srs_error_wrap(err, "start conn coroutine");
     }
-    srs_verbose("accept client finished. conns=%d, ret=%d", (int)conns.size(), ret);
     
-    return ret;
+    return err;
 }
 
 srs_error_t SrsServer::fd2conn(SrsListenerType type, srs_netfd_t stfd, SrsConnection** pconn)
@@ -1255,7 +1227,8 @@ srs_error_t SrsServer::fd2conn(SrsListenerType type, srs_netfd_t stfd, SrsConnec
             fd, max_connections, (int)conns.size(), srs_error_desc(err).c_str());
     }
     if ((int)conns.size() >= max_connections) {
-        return srs_error_new(ERROR_EXCEED_CONNECTIONS, "drop fd=%d, max=%d, cur=%d for exceed connection limits",
+        return srs_error_new(ERROR_EXCEED_CONNECTIONS,
+            "drop fd=%d, max=%d, cur=%d for exceed connection limits",
             fd, max_connections, (int)conns.size());
     }
     
@@ -1306,118 +1279,126 @@ void SrsServer::remove(ISrsConnection* c)
     stat->kbps_add_delta(conn);
     stat->on_disconnect(conn->srs_id());
     
-    // all connections are created by server,
-    // so we free it here.
+    // use manager to free it async.
     conn_manager->remove(c);
 }
 
-int SrsServer::on_reload_listen()
+srs_error_t SrsServer::on_reload_listen()
 {
-    // TODO: FIXME: Use error.
-    srs_error_t err = listen();
-    int ret = srs_error_code(err);
-    srs_freep(err);
-    return ret;
+    srs_error_t err = srs_success;
+    
+    if ((err = listen()) != srs_success) {
+        return srs_error_wrap(err, "reload listen");
+    }
+    
+    return err;
 }
 
-int SrsServer::on_reload_pid()
+srs_error_t SrsServer::on_reload_pid()
 {
+    srs_error_t err = srs_success;
+    
     if (pid_fd > 0) {
         ::close(pid_fd);
         pid_fd = -1;
     }
     
-    // TODO: FIXME: Use error.
-    srs_error_t err = acquire_pid_file();
-    int ret = srs_error_code(err);
-    srs_freep(err);
-    return ret;
+    if ((err = acquire_pid_file()) != srs_success) {
+        return srs_error_wrap(err, "reload pid");
+    }
+    
+    return err;
 }
 
-int SrsServer::on_reload_vhost_added(std::string vhost)
+srs_error_t SrsServer::on_reload_vhost_added(std::string vhost)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     if (!_srs_config->get_vhost_http_enabled(vhost)) {
-        return ret;
+        return err;
     }
     
     // TODO: FIXME: should handle the event in SrsHttpStaticServer
-    if ((ret = on_reload_vhost_http_updated()) != ERROR_SUCCESS) {
-        return ret;
+    if ((err = on_reload_vhost_http_updated()) != srs_success) {
+        return srs_error_wrap(err, "reload vhost added");
     }
     
-    return ret;
+    return err;
 }
 
-int SrsServer::on_reload_vhost_removed(std::string /*vhost*/)
+srs_error_t SrsServer::on_reload_vhost_removed(std::string /*vhost*/)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     // TODO: FIXME: should handle the event in SrsHttpStaticServer
-    if ((ret = on_reload_vhost_http_updated()) != ERROR_SUCCESS) {
-        return ret;
+    if ((err = on_reload_vhost_http_updated()) != srs_success) {
+        return srs_error_wrap(err, "reload vhost removed");
     }
     
-    return ret;
+    return err;
 }
 
-int SrsServer::on_reload_http_api_enabled()
+srs_error_t SrsServer::on_reload_http_api_enabled()
 {
-    // TODO: FIXME: Use error.
-    srs_error_t err = listen_http_api();
-    int ret = srs_error_code(err);
-    srs_freep(err);
-    return ret;
+    srs_error_t err = srs_success;
+    
+    if ((err = listen_http_api()) != srs_success) {
+        return srs_error_wrap(err, "reload http_api");
+    }
+    
+    return err;
 }
 
-int SrsServer::on_reload_http_api_disabled()
+srs_error_t SrsServer::on_reload_http_api_disabled()
 {
     close_listeners(SrsListenerHttpApi);
-    return ERROR_SUCCESS;
+    return srs_success;
 }
 
-int SrsServer::on_reload_http_stream_enabled()
+srs_error_t SrsServer::on_reload_http_stream_enabled()
 {
-    // TODO: FIXME: Use error.
-    srs_error_t err = listen_http_stream();
-    int ret = srs_error_code(err);
-    srs_freep(err);
-    return ret;
+    srs_error_t err = srs_success;
+    
+    if ((err = listen_http_stream()) != srs_success) {
+        return srs_error_wrap(err, "reload http_stream enabled");
+    }
+    
+    return err;
 }
 
-int SrsServer::on_reload_http_stream_disabled()
+srs_error_t SrsServer::on_reload_http_stream_disabled()
 {
     close_listeners(SrsListenerHttpStream);
-    return ERROR_SUCCESS;
+    return srs_success;
 }
 
 // TODO: FIXME: rename to http_remux
-int SrsServer::on_reload_http_stream_updated()
+srs_error_t SrsServer::on_reload_http_stream_updated()
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
-    if ((ret = on_reload_http_stream_enabled()) != ERROR_SUCCESS) {
-        return ret;
+    if ((err = on_reload_http_stream_enabled()) != srs_success) {
+        return srs_error_wrap(err, "reload http_stream updated");
     }
     
     // TODO: FIXME: should handle the event in SrsHttpStaticServer
-    if ((ret = on_reload_vhost_http_updated()) != ERROR_SUCCESS) {
-        return ret;
+    if ((err = on_reload_vhost_http_updated()) != srs_success) {
+        return srs_error_wrap(err, "reload http_stream updated");
     }
     
-    return ret;
+    return err;
 }
 
-int SrsServer::on_publish(SrsSource* s, SrsRequest* r)
+srs_error_t SrsServer::on_publish(SrsSource* s, SrsRequest* r)
 {
     int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     if ((ret = http_server->http_mount(s, r)) != ERROR_SUCCESS) {
-        return ret;
+        return srs_error_new(ret, "http mount");
     }
     
-    return ret;
+    return err;
 }
 
 void SrsServer::on_unpublish(SrsSource* s, SrsRequest* r)

@@ -142,12 +142,14 @@ srs_error_t SrsRecvThread::do_cycle()
         SrsCommonMessage* msg = NULL;
         
         // Process the received message.
-        if ((ret = rtmp->recv_message(&msg)) == ERROR_SUCCESS) {
-            ret = pumper->consume(msg);
+        if ((err = rtmp->recv_message(&msg)) == srs_success) {
+            if ((ret = pumper->consume(msg)) != ERROR_SUCCESS) {
+                err = srs_error_new(ret, "pumper consume");
+            }
         }
         
-        if (ret != ERROR_SUCCESS) {
-            if (!srs_is_client_gracefully_close(ret) && !srs_is_system_control_error(ret)) {
+        if (err != srs_success) {
+            if (!srs_is_client_gracefully_close(err) && !srs_is_system_control_error(err)) {
                 srs_error("recv thread error. ret=%d", ret);
             }
             
@@ -155,11 +157,10 @@ srs_error_t SrsRecvThread::do_cycle()
             trd->interrupt();
             
             // Notify the pumper to quit for error.
-            pumper->interrupt(ret);
+            pumper->interrupt(srs_error_code(err));
             
-            return srs_error_new(ret, "recv thread");
+            return srs_error_wrap(err, "recv thread");
         }
-        srs_verbose("thread loop recv message. ret=%d", ret);
     }
     
     return err;
@@ -368,6 +369,7 @@ void SrsPublishRecvThread::stop()
 int SrsPublishRecvThread::consume(SrsCommonMessage* msg)
 {
     int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     // when cid changed, change it.
     if (ncid != cid) {
@@ -386,7 +388,10 @@ int SrsPublishRecvThread::consume(SrsCommonMessage* msg)
                 srs_update_system_time_ms(), msg->header.timestamp, msg->size);
     
     // the rtmp connection will handle this message
-    ret = _conn->handle_publish_message(_source, msg);
+    err = _conn->handle_publish_message(_source, msg);
+    // TODO: FIXME: Use error
+    ret = srs_error_code(err);
+    srs_freep(err);
     
     // must always free it,
     // the source will copy it if need to use.
@@ -468,12 +473,12 @@ void SrsPublishRecvThread::on_read(ssize_t nread)
 }
 #endif
 
-int SrsPublishRecvThread::on_reload_vhost_publish(string vhost)
+srs_error_t SrsPublishRecvThread::on_reload_vhost_publish(string vhost)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     if (req->vhost != vhost) {
-        return ret;
+        return err;
     }
     
     // the mr settings,
@@ -505,22 +510,22 @@ int SrsPublishRecvThread::on_reload_vhost_publish(string vhost)
     mr = mr_enabled;
     mr_sleep = sleep_ms;
     
-    return ret;
+    return err;
 }
 
-int SrsPublishRecvThread::on_reload_vhost_realtime(string vhost)
+srs_error_t SrsPublishRecvThread::on_reload_vhost_realtime(string vhost)
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     if (req->vhost != vhost) {
-        return ret;
+        return err;
     }
     
     bool realtime_enabled = _srs_config->get_realtime_enabled(req->vhost);
     srs_trace("realtime changed %d=>%d", realtime, realtime_enabled);
     realtime = realtime_enabled;
     
-    return ret;
+    return err;
 }
 
 void SrsPublishRecvThread::set_socket_buffer(int sleep_ms)
@@ -560,7 +565,6 @@ void SrsPublishRecvThread::set_socket_buffer(int sleep_ms)
 SrsHttpRecvThread::SrsHttpRecvThread(SrsResponseOnlyHttpConn* c)
 {
     conn = c;
-    error = ERROR_SUCCESS;
     trd = new SrsSTCoroutine("http-receive", this, _srs_context->get_id());
 }
 
@@ -580,28 +584,21 @@ srs_error_t SrsHttpRecvThread::start()
     return err;
 }
 
-int SrsHttpRecvThread::error_code()
+srs_error_t SrsHttpRecvThread::pull()
 {
-    return error;
+    return trd->pull();
 }
 
 srs_error_t SrsHttpRecvThread::cycle()
 {
-    int ret = ERROR_SUCCESS;
     srs_error_t err = srs_success;
     
-    while (true) {
-        if ((err = trd->pull()) != srs_success) {
-            return srs_error_wrap(err, "http recv thread");
-        }
-        
+    while ((err = trd->pull()) == srs_success) {
         ISrsHttpMessage* req = NULL;
         SrsAutoFree(ISrsHttpMessage, req);
         
-        if ((ret = conn->pop_message(&req)) != ERROR_SUCCESS) {
-            err = srs_error_new(ret, "pop message");
-            error = ret;
-            break;
+        if ((err = conn->pop_message(&req)) != srs_success) {
+            return srs_error_wrap(err, "pop message");
         }
     }
     

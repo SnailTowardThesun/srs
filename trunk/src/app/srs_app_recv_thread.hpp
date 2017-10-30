@@ -217,8 +217,8 @@ public:
 #endif
 // interface ISrsReloadHandler
 public:
-    virtual int on_reload_vhost_publish(std::string vhost);
-    virtual int on_reload_vhost_realtime(std::string vhost);
+    virtual srs_error_t on_reload_vhost_publish(std::string vhost);
+    virtual srs_error_t on_reload_vhost_realtime(std::string vhost);
 private:
     virtual void set_socket_buffer(int sleep_ms);
 };
@@ -234,14 +234,13 @@ class SrsHttpRecvThread : public ISrsCoroutineHandler
 private:
     SrsResponseOnlyHttpConn* conn;
     SrsCoroutine* trd;
-    int error;
 public:
     SrsHttpRecvThread(SrsResponseOnlyHttpConn* c);
     virtual ~SrsHttpRecvThread();
 public:
     virtual srs_error_t start();
 public:
-    virtual int error_code();
+    virtual srs_error_t pull();
 // interface ISrsOneCycleThreadHandler
 public:
     virtual srs_error_t cycle();

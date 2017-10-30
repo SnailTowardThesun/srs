@@ -60,33 +60,23 @@ SrsAppCasterFlv::~SrsAppCasterFlv()
     srs_freep(manager);
 }
 
-int SrsAppCasterFlv::initialize()
+srs_error_t SrsAppCasterFlv::initialize()
 {
-    int ret = ERROR_SUCCESS;
     srs_error_t err = srs_success;
     
     if ((err = http_mux->handle("/", this)) != srs_success) {
-        // TODO: FIXME: Use error.
-        ret = srs_error_code(err);
-        srs_freep(err);
-        
-        return ret;
+        return srs_error_wrap(err, "handle root");
     }
     
     if ((err = manager->start()) != srs_success) {
-        // TODO: FIXME: Use error
-        ret = srs_error_code(err);
-        srs_freep(err);
-
-        return ret;
+        return srs_error_wrap(err, "start manager");
     }
     
-    return ret;
+    return err;
 }
 
-int SrsAppCasterFlv::on_tcp_client(srs_netfd_t stfd)
+srs_error_t SrsAppCasterFlv::on_tcp_client(srs_netfd_t stfd)
 {
-    int ret = ERROR_SUCCESS;
     srs_error_t err = srs_success;
     
     string ip = srs_get_peer_ip(srs_netfd_fileno(stfd));
@@ -94,14 +84,10 @@ int SrsAppCasterFlv::on_tcp_client(srs_netfd_t stfd)
     conns.push_back(conn);
     
     if ((err = conn->start()) != srs_success) {
-        // TODO: FIXME: Use error
-        ret = srs_error_code(err);
-        srs_freep(err);
-
-        return ret;
+        return srs_error_wrap(err, "start tcp listener");
     }
     
-    return ret;
+    return err;
 }
 
 void SrsAppCasterFlv::remove(ISrsConnection* c)
@@ -119,7 +105,7 @@ void SrsAppCasterFlv::remove(ISrsConnection* c)
     manager->remove(c);
 }
 
-int SrsAppCasterFlv::serve_http(ISrsHttpResponseWriter* w, ISrsHttpMessage* r)
+srs_error_t SrsAppCasterFlv::serve_http(ISrsHttpResponseWriter* w, ISrsHttpMessage* r)
 {
     SrsHttpMessage* msg = dynamic_cast<SrsHttpMessage*>(r);
     SrsDynamicHttpConn* conn = dynamic_cast<SrsDynamicHttpConn*>(msg->connection());
@@ -142,7 +128,12 @@ int SrsAppCasterFlv::serve_http(ISrsHttpResponseWriter* w, ISrsHttpMessage* r)
         o = o.substr(0, o.length() - 4);
     }
     
-    return conn->proxy(w, r, o);
+    int ret = conn->proxy(w, r, o);
+    if (ret != ERROR_SUCCESS) {
+        return srs_error_new(ret, "proxy");
+    }
+    
+    return srs_success;
 }
 
 SrsDynamicHttpConn::SrsDynamicHttpConn(IConnectionManager* cm, srs_netfd_t fd, SrsHttpServeMux* m, string cip)
@@ -158,10 +149,9 @@ SrsDynamicHttpConn::~SrsDynamicHttpConn()
     srs_freep(pprint);
 }
 
-int SrsDynamicHttpConn::on_got_http_message(ISrsHttpMessage* msg)
+srs_error_t SrsDynamicHttpConn::on_got_http_message(ISrsHttpMessage* msg)
 {
-    int ret = ERROR_SUCCESS;
-    return ret;
+    return srs_success;
 }
 
 int SrsDynamicHttpConn::proxy(ISrsHttpResponseWriter* w, ISrsHttpMessage* r, std::string o)
@@ -208,6 +198,7 @@ int SrsDynamicHttpConn::proxy(ISrsHttpResponseWriter* w, ISrsHttpMessage* r, std
 int SrsDynamicHttpConn::do_proxy(ISrsHttpResponseReader* rr, SrsFlvDecoder* dec)
 {
     int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     srs_freep(sdk);
     
@@ -215,12 +206,18 @@ int SrsDynamicHttpConn::do_proxy(ISrsHttpResponseReader* rr, SrsFlvDecoder* dec)
     int64_t sto = SRS_CONSTS_RTMP_PULSE_TMMS;
     sdk = new SrsSimpleRtmpClient(output, cto, sto);
     
-    if ((ret = sdk->connect()) != ERROR_SUCCESS) {
+    if ((err = sdk->connect()) != srs_success) {
+        // TODO: FIXME: Use error
+        ret = srs_error_code(err);
+        srs_freep(err);
         srs_error("flv: connect %s failed, cto=%" PRId64 ", sto=%" PRId64 ". ret=%d", output.c_str(), cto, sto, ret);
         return ret;
     }
     
-    if ((ret = sdk->publish()) != ERROR_SUCCESS) {
+    if ((err = sdk->publish()) != srs_success) {
+        // TODO: FIXME: Use error
+        ret = srs_error_code(err);
+        srs_freep(err);
         srs_error("flv: publish failed. ret=%d", ret);
         return ret;
     }
@@ -254,7 +251,10 @@ int SrsDynamicHttpConn::do_proxy(ISrsHttpResponseReader* rr, SrsFlvDecoder* dec)
         }
         
         // TODO: FIXME: for post flv, reconnect when error.
-        if ((ret = sdk->send_and_free_message(msg)) != ERROR_SUCCESS) {
+        if ((err = sdk->send_and_free_message(msg)) != srs_success) {
+            // TODO: FIXME: Use error
+            ret = srs_error_code(err);
+            srs_freep(err);
             if (!srs_is_client_gracefully_close(ret)) {
                 srs_error("flv: proxy rtmp packet failed. ret=%d", ret);
             }

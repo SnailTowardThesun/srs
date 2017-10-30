@@ -39,6 +39,7 @@
 #include <vector>
 using namespace std;
 
+#include <srs_core_autofree.hpp>
 #include <srs_kernel_log.hpp>
 #include <srs_kernel_error.hpp>
 #include <srs_kernel_buffer.hpp>
@@ -154,50 +155,82 @@ int64_t srs_update_system_time_ms()
     return _srs_system_time_us_cache / 1000;
 }
 
-string srs_dns_resolve(string host)
+string srs_dns_resolve(string host, int& family)
 {
-    if (inet_addr(host.c_str()) != INADDR_NONE) {
-        return host;
-    }
+    addrinfo hints;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family  = family;
     
-    hostent* answer = gethostbyname(host.c_str());
-    if (answer == NULL) {
+    addrinfo* r = NULL;
+    SrsAutoFree(addrinfo, r);
+    
+    if(getaddrinfo(host.c_str(), NULL, NULL, &r) != 0) {
         return "";
     }
     
-    char ipv4[16];
-    memset(ipv4, 0, sizeof(ipv4));
-    
-    // covert the first entry to ip.
-    if (answer->h_length > 0) {
-        inet_ntop(AF_INET, answer->h_addr_list[0], ipv4, sizeof(ipv4));
+    char saddr[64];
+    char* h = (char*)saddr;
+    socklen_t nbh = sizeof(saddr);
+    const int r0 = getnameinfo(r->ai_addr, r->ai_addrlen, h, nbh, NULL, 0, NI_NUMERICHOST);
+
+    if(r0) {
+       family = r->ai_family;
+       return string(saddr);
     }
-    
-    return ipv4;
+    return "";
 }
 
 void srs_parse_hostport(const string& hostport, string& host, int& port)
 {
-    size_t pos = hostport.find(":");
+    const size_t pos = hostport.rfind(":");   // Look for ":" from the end, to work with IPv6.
     if (pos != std::string::npos) {
-        string p = hostport.substr(pos + 1);
-        host = hostport.substr(0, pos);
+        const string p = hostport.substr(pos + 1);
+        if ((pos >= 1) &&
+            (hostport[0]       == '[') &&
+            (hostport[pos - 1] == ']')) {
+            // Handle IPv6 in RFC 2732 format, e.g. [3ffe:dead:beef::1]:1935
+            host = hostport.substr(1, pos - 2);
+        } else {
+            // Handle IP address
+            host = hostport.substr(0, pos);
+        }
         port = ::atoi(p.c_str());
     } else {
         host = hostport;
     }
 }
 
+string srs_any_address4listener()
+{
+    int fd = socket(AF_INET6, SOCK_DGRAM, 0);
+    
+    // socket()
+    // A -1 is returned if an error occurs, otherwise the return value is a
+    // descriptor referencing the socket.
+    if(fd != -1) {
+        close(fd);
+        return "::";
+    }
+    
+    return "0.0.0.0";
+}
+
 void srs_parse_endpoint(string hostport, string& ip, int& port)
 {
-    ip = "0.0.0.0";
-    
-    size_t pos = string::npos;
-    if ((pos = hostport.find(":")) != string::npos) {
-        ip = hostport.substr(0, pos);
-        string sport = hostport.substr(pos + 1);
+    const size_t pos = hostport.rfind(":");   // Look for ":" from the end, to work with IPv6.
+    if (pos != std::string::npos) {
+        if ((pos >= 1) && (hostport[0] == '[') && (hostport[pos - 1] == ']')) {
+            // Handle IPv6 in RFC 2732 format, e.g. [3ffe:dead:beef::1]:1935
+            ip = hostport.substr(1, pos - 2);
+        } else {
+            // Handle IP address
+            ip = hostport.substr(0, pos);
+        }
+        
+        const string sport = hostport.substr(pos + 1);
         port = ::atoi(sport.c_str());
     } else {
+        ip   = srs_any_address4listener();
         port = ::atoi(hostport.c_str());
     }
 }
@@ -317,7 +350,7 @@ string srs_string_remove(string str, string remove_chars)
 
 bool srs_string_ends_with(string str, string flag)
 {
-    ssize_t pos = str.rfind(flag);
+    const size_t pos = str.rfind(flag);
     return (pos != string::npos) && (pos == str.length() - flag.length());
 }
 
@@ -509,17 +542,15 @@ int srs_do_create_dir_recursively(string dir)
         return true;
     }
     
-    int srs_create_dir_recursively(string dir)
+    srs_error_t srs_create_dir_recursively(string dir)
     {
-        int ret = ERROR_SUCCESS;
-        
-        ret = srs_do_create_dir_recursively(dir);
+        int ret = srs_do_create_dir_recursively(dir);
         
         if (ret == ERROR_SYSTEM_DIR_EXISTS) {
-            return ERROR_SUCCESS;
+            return srs_success;
         }
         
-        return ret;
+        return srs_error_new(ret, "create dir %s", dir.c_str());
     }
     
     bool srs_path_exists(std::string path)

@@ -24,6 +24,7 @@
 #include <srs_librtmp.hpp>
 
 #include <stdlib.h>
+#include <sys/socket.h>
 
 // for srs-librtmp, @see https://github.com/ossrs/srs/issues/213
 #ifndef _WIN32
@@ -346,16 +347,12 @@ static char *inet_ntop6(const u_char *src, char *dst, socklen_t size);
 const char* inet_ntop(int af, const void *src, char *dst, socklen_t size)
 {
     switch (af) {
-        case AF_INET:
-            return (inet_ntop4( (unsigned char*)src, (char*)dst, size)); // ****
-#ifdef AF_INET6
-#error "IPv6 not supported"
-            //case AF_INET6:
-            //    return (char*)(inet_ntop6( (unsigned char*)src, (char*)dst, size)); // ****
-#endif
-        default:
-            // return (NULL); // ****
-            return 0 ; // ****
+    case AF_INET:
+        return (inet_ntop4((unsigned char*)src, (char*)dst, size));
+    case AF_INET6:
+       return (char*)(inet_ntop6((unsigned char*)src, (char*)dst, size));
+    default:
+        return (NULL);
     }
     /* NOTREACHED */
 }
@@ -504,7 +501,8 @@ int srs_librtmp_context_resolve_host(Context* context)
     int ret = ERROR_SUCCESS;
     
     // connect to server:port
-    context->ip = srs_dns_resolve(context->host);
+    int family = AF_UNSPEC;
+    context->ip = srs_dns_resolve(context->host, family);
     if (context->ip.empty()) {
         return ERROR_SYSTEM_DNS_RESOLVE;
     }
@@ -666,6 +664,7 @@ extern "C"{
         return ERROR_RTMP_HS_SSL_REQUIRE;
 #else
         int ret = ERROR_SUCCESS;
+        srs_error_t err = srs_success;
         
         srs_assert(rtmp != NULL);
         Context* context = (Context*)rtmp;
@@ -676,7 +675,10 @@ extern "C"{
         srs_freep(context->rtmp);
         context->rtmp = new SrsRtmpClient(context->skt);
         
-        if ((ret = context->rtmp->complex_handshake()) != ERROR_SUCCESS) {
+        if ((err = context->rtmp->complex_handshake()) != srs_success) {
+            // TODO: FIXME: Use error
+            ret = srs_error_code(err);
+            srs_freep(err);
             return ret;
         }
         
@@ -687,6 +689,7 @@ extern "C"{
     int srs_rtmp_do_simple_handshake(srs_rtmp_t rtmp)
     {
         int ret = ERROR_SUCCESS;
+        srs_error_t err = srs_success;
         
         srs_assert(rtmp != NULL);
         Context* context = (Context*)rtmp;
@@ -697,7 +700,10 @@ extern "C"{
         srs_freep(context->rtmp);
         context->rtmp = new SrsRtmpClient(context->skt);
         
-        if ((ret = context->rtmp->simple_handshake()) != ERROR_SUCCESS) {
+        if ((err = context->rtmp->simple_handshake()) != srs_success) {
+            // TODO: FIXME: Use error
+            ret = srs_error_code(err);
+            srs_freep(err);
             return ret;
         }
         
@@ -746,6 +752,7 @@ extern "C"{
     int srs_rtmp_connect_app(srs_rtmp_t rtmp)
     {
         int ret = ERROR_SUCCESS;
+        srs_error_t err = srs_success;
         
         srs_assert(rtmp != NULL);
         Context* context = (Context*)rtmp;
@@ -767,7 +774,10 @@ extern "C"{
         }
         
         Context* c = context;
-        if ((ret = context->rtmp->connect_app(c->app, tcUrl, c->req, true, &c->si)) != ERROR_SUCCESS) {
+        if ((err = context->rtmp->connect_app(c->app, tcUrl, c->req, true, &c->si)) != srs_success) {
+            // TODO: FIXME: Use error
+            ret = srs_error_code(err);
+            srs_freep(err);
             return ret;
         }
         
@@ -812,14 +822,21 @@ extern "C"{
     int srs_rtmp_play_stream(srs_rtmp_t rtmp)
     {
         int ret = ERROR_SUCCESS;
+        srs_error_t err = srs_success;
         
         srs_assert(rtmp != NULL);
         Context* context = (Context*)rtmp;
         
-        if ((ret = context->rtmp->create_stream(context->stream_id)) != ERROR_SUCCESS) {
+        if ((err = context->rtmp->create_stream(context->stream_id)) != srs_success) {
+            // TODO: FIXME: Use error
+            ret = srs_error_code(err);
+            srs_freep(err);
             return ret;
         }
-        if ((ret = context->rtmp->play(context->stream, context->stream_id)) != ERROR_SUCCESS) {
+        if ((err = context->rtmp->play(context->stream, context->stream_id)) != srs_success) {
+            // TODO: FIXME: Use error
+            ret = srs_error_code(err);
+            srs_freep(err);
             return ret;
         }
         
@@ -829,11 +846,15 @@ extern "C"{
     int srs_rtmp_publish_stream(srs_rtmp_t rtmp)
     {
         int ret = ERROR_SUCCESS;
+        srs_error_t err = srs_success;
         
         srs_assert(rtmp != NULL);
         Context* context = (Context*)rtmp;
         
-        if ((ret = context->rtmp->fmle_publish(context->stream, context->stream_id)) != ERROR_SUCCESS) {
+        if ((err = context->rtmp->fmle_publish(context->stream, context->stream_id)) != srs_success) {
+            // TODO: FIXME: Use error
+            ret = srs_error_code(err);
+            srs_freep(err);
             return ret;
         }
         
@@ -1035,6 +1056,7 @@ extern "C"{
         *size = 0;
         
         int ret = ERROR_SUCCESS;
+        srs_error_t err = srs_success;
         
         srs_assert(rtmp != NULL);
         Context* context = (Context*)rtmp;
@@ -1050,7 +1072,10 @@ extern "C"{
             }
             
             // read from protocol sdk.
-            if (!msg && (ret = context->rtmp->recv_message(&msg)) != ERROR_SUCCESS) {
+            if (!msg && (err = context->rtmp->recv_message(&msg)) != srs_success) {
+                // TODO: FIXME: Use error
+                ret = srs_error_code(err);
+                srs_freep(err);
                 return ret;
             }
             
@@ -1079,6 +1104,7 @@ extern "C"{
     int srs_rtmp_write_packet(srs_rtmp_t rtmp, char type, uint32_t timestamp, char* data, int size)
     {
         int ret = ERROR_SUCCESS;
+        srs_error_t err = srs_success;
         
         srs_assert(rtmp != NULL);
         Context* context = (Context*)rtmp;
@@ -1092,7 +1118,10 @@ extern "C"{
         srs_assert(msg);
         
         // send out encoded msg.
-        if ((ret = context->rtmp->send_and_free_message(msg, context->stream_id)) != ERROR_SUCCESS) {
+        if ((err = context->rtmp->send_and_free_message(msg, context->stream_id)) != srs_success) {
+            // TODO: FIXME: Use error
+            ret = srs_error_code(err);
+            srs_freep(err);
             return ret;
         }
         

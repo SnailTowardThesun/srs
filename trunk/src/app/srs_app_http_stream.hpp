@@ -229,7 +229,7 @@ public:
     virtual ~SrsLiveStream();
     virtual int update(SrsSource* s, SrsRequest* r);
 public:
-    virtual int serve_http(ISrsHttpResponseWriter* w, ISrsHttpMessage* r);
+    virtual srs_error_t serve_http(ISrsHttpResponseWriter* w, ISrsHttpMessage* r);
 private:
     virtual int streaming_send_messages(ISrsBufferEncoder* enc, SrsSharedPtrMessage** msgs, int nb_msgs);
 };
@@ -290,11 +290,11 @@ public:
     virtual void http_unmount(SrsSource* s, SrsRequest* r);
 // interface ISrsReloadHandler.
 public:
-    virtual int on_reload_vhost_added(std::string vhost);
-    virtual int on_reload_vhost_http_remux_updated(std::string vhost);
+    virtual srs_error_t on_reload_vhost_added(std::string vhost);
+    virtual srs_error_t on_reload_vhost_http_remux_updated(std::string vhost);
 // interface ISrsHttpMatchHijacker
 public:
-    virtual int hijack(ISrsHttpMessage* request, ISrsHttpHandler** ph);
+    virtual srs_error_t hijack(ISrsHttpMessage* request, ISrsHttpHandler** ph);
 private:
     virtual int initialize_flv_streaming();
     virtual int initialize_flv_entry(std::string vhost);

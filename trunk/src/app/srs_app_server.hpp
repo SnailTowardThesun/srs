@@ -91,7 +91,7 @@ public:
     virtual ~SrsListener();
 public:
     virtual SrsListenerType listen_type();
-    virtual int listen(std::string i, int p) = 0;
+    virtual srs_error_t listen(std::string i, int p) = 0;
 };
 
 /**
@@ -105,10 +105,10 @@ public:
     SrsBufferListener(SrsServer* server, SrsListenerType type);
     virtual ~SrsBufferListener();
 public:
-    virtual int listen(std::string ip, int port);
+    virtual srs_error_t listen(std::string ip, int port);
 // ISrsTcpHandler
 public:
-    virtual int on_tcp_client(srs_netfd_t stfd);
+    virtual srs_error_t on_tcp_client(srs_netfd_t stfd);
 };
 
 #ifdef SRS_AUTO_STREAM_CASTER
@@ -124,10 +124,10 @@ public:
     SrsRtspListener(SrsServer* svr, SrsListenerType t, SrsConfDirective* c);
     virtual ~SrsRtspListener();
 public:
-    virtual int listen(std::string i, int p);
+    virtual srs_error_t listen(std::string i, int p);
 // ISrsTcpHandler
 public:
-    virtual int on_tcp_client(srs_netfd_t stfd);
+    virtual srs_error_t on_tcp_client(srs_netfd_t stfd);
 };
 
 /**
@@ -142,10 +142,10 @@ public:
     SrsHttpFlvListener(SrsServer* svr, SrsListenerType t, SrsConfDirective* c);
     virtual ~SrsHttpFlvListener();
 public:
-    virtual int listen(std::string i, int p);
+    virtual srs_error_t listen(std::string i, int p);
 // ISrsTcpHandler
 public:
-    virtual int on_tcp_client(srs_netfd_t stfd);
+    virtual srs_error_t on_tcp_client(srs_netfd_t stfd);
 };
 #endif
 
@@ -161,7 +161,7 @@ public:
     SrsUdpStreamListener(SrsServer* svr, SrsListenerType t, ISrsUdpHandler* c);
     virtual ~SrsUdpStreamListener();
 public:
-    virtual int listen(std::string i, int p);
+    virtual srs_error_t listen(std::string i, int p);
 };
 
 /**
@@ -358,7 +358,7 @@ public:
      *       for instance RTMP connection to serve client.
      * @param stfd, the client fd in st boxed, the underlayer fd.
      */
-    virtual int accept_client(SrsListenerType type, srs_netfd_t stfd);
+    virtual srs_error_t accept_client(SrsListenerType type, srs_netfd_t stfd);
 private:
     virtual srs_error_t fd2conn(SrsListenerType type, srs_netfd_t stfd, SrsConnection** pconn);
     // IConnectionManager
@@ -371,18 +371,18 @@ public:
     virtual void remove(ISrsConnection* c);
 // interface ISrsReloadHandler.
 public:
-    virtual int on_reload_listen();
-    virtual int on_reload_pid();
-    virtual int on_reload_vhost_added(std::string vhost);
-    virtual int on_reload_vhost_removed(std::string vhost);
-    virtual int on_reload_http_api_enabled();
-    virtual int on_reload_http_api_disabled();
-    virtual int on_reload_http_stream_enabled();
-    virtual int on_reload_http_stream_disabled();
-    virtual int on_reload_http_stream_updated();
+    virtual srs_error_t on_reload_listen();
+    virtual srs_error_t on_reload_pid();
+    virtual srs_error_t on_reload_vhost_added(std::string vhost);
+    virtual srs_error_t on_reload_vhost_removed(std::string vhost);
+    virtual srs_error_t on_reload_http_api_enabled();
+    virtual srs_error_t on_reload_http_api_disabled();
+    virtual srs_error_t on_reload_http_stream_enabled();
+    virtual srs_error_t on_reload_http_stream_disabled();
+    virtual srs_error_t on_reload_http_stream_updated();
 // interface ISrsSourceHandler
 public:
-    virtual int on_publish(SrsSource* s, SrsRequest* r);
+    virtual srs_error_t on_publish(SrsSource* s, SrsRequest* r);
     virtual void on_unpublish(SrsSource* s, SrsRequest* r);
 };
 

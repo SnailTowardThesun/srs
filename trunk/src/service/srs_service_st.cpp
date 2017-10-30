@@ -26,8 +26,10 @@
 #include <st.h>
 #include <fcntl.h>
 #include <sys/socket.h>
+#include <netdb.h>
 using namespace std;
 
+#include <srs_core_autofree.hpp>
 #include <srs_kernel_error.hpp>
 #include <srs_kernel_log.hpp>
 #include <srs_service_utility.hpp>
@@ -102,10 +104,8 @@ srs_thread_t srs_thread_self()
     return (srs_thread_t)st_thread_self();
 }
 
-int srs_socket_connect(string server, int port, int64_t tm, srs_netfd_t* pstfd)
+srs_error_t srs_socket_connect(string server, int port, int64_t tm, srs_netfd_t* pstfd)
 {
-    int ret = ERROR_SUCCESS;
-    
     st_utime_t timeout = ST_UTIME_NO_TIMEOUT;
     if (tm != SRS_CONSTS_NO_TMMS) {
         timeout = (st_utime_t)(tm * 1000);
@@ -113,52 +113,39 @@ int srs_socket_connect(string server, int port, int64_t tm, srs_netfd_t* pstfd)
     
     *pstfd = NULL;
     srs_netfd_t stfd = NULL;
-    sockaddr_in addr;
+
+    char sport[8];
+    snprintf(sport, sizeof(sport), "%d", port);
     
-    int sock = socket(AF_INET, SOCK_STREAM, 0);
-    if(sock == -1){
-        ret = ERROR_SOCKET_CREATE;
-        srs_error("create socket error. ret=%d", ret);
-        return ret;
+    addrinfo hints;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family   = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    
+    addrinfo* r  = NULL;
+    SrsAutoFree(addrinfo, r);
+    if(getaddrinfo(server.c_str(), sport, (const addrinfo*)&hints, &r) != 0) {
+        return srs_error_new(ERROR_SYSTEM_IP_INVALID, "get address info");
     }
     
-    srs_fd_close_exec(sock);
+    int sock = socket(r->ai_family, r->ai_socktype, r->ai_protocol);
+    if(sock == -1){
+        return srs_error_new(ERROR_SOCKET_CREATE, "create socket");
+    }
     
     srs_assert(!stfd);
     stfd = st_netfd_open_socket(sock);
     if(stfd == NULL){
-        ret = ERROR_ST_OPEN_SOCKET;
-        srs_error("st_netfd_open_socket failed. ret=%d", ret);
-        return ret;
+        return srs_error_new(ERROR_ST_OPEN_SOCKET, "open socket");
     }
     
-    // connect to server.
-    std::string ip = srs_dns_resolve(server);
-    if (ip.empty()) {
-        ret = ERROR_SYSTEM_IP_INVALID;
-        srs_error("dns resolve server error, ip empty. ret=%d", ret);
-        goto failed;
+    if (st_connect((st_netfd_t)stfd, r->ai_addr, r->ai_addrlen, timeout) == -1){
+        srs_close_stfd(stfd);
+        return srs_error_new(ERROR_ST_CONNECT, "connect to %s:%d", server.c_str(), port);
     }
-    
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(port);
-    addr.sin_addr.s_addr = inet_addr(ip.c_str());
-    
-    if (st_connect((st_netfd_t)stfd, (const struct sockaddr*)&addr, sizeof(sockaddr_in), timeout) == -1){
-        ret = ERROR_ST_CONNECT;
-        srs_error("connect to server error. ip=%s, port=%d, ret=%d", ip.c_str(), port, ret);
-        goto failed;
-    }
-    srs_info("connect ok. server=%s, ip=%s, port=%d", server.c_str(), ip.c_str(), port);
     
     *pstfd = stfd;
-    return ret;
-    
-failed:
-    if (stfd) {
-        srs_close_stfd(stfd);
-    }
-    return ret;
+    return srs_success;
 }
 
 srs_cond_t srs_cond_new()
@@ -252,10 +239,10 @@ SrsStSocket::~SrsStSocket()
 {
 }
 
-int SrsStSocket::initialize(srs_netfd_t fd)
+srs_error_t SrsStSocket::initialize(srs_netfd_t fd)
 {
     stfd = fd;
-    return ERROR_SUCCESS;
+    return srs_success;
 }
 
 bool SrsStSocket::is_never_timeout(int64_t tm)
@@ -444,23 +431,22 @@ SrsTcpClient::~SrsTcpClient()
     srs_freep(io);
 }
 
-int SrsTcpClient::connect()
+srs_error_t SrsTcpClient::connect()
 {
-    int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     close();
     
     srs_assert(stfd == NULL);
-    if ((ret = srs_socket_connect(host, port, timeout, &stfd)) != ERROR_SUCCESS) {
-        srs_error("connect tcp://%s:%d failed, to=%" PRId64 "ms. ret=%d", host.c_str(), port, timeout, ret);
-        return ret;
+    if ((err = srs_socket_connect(host, port, timeout, &stfd)) != srs_success) {
+        return srs_error_wrap(err, "tcp: connect %s:%d to=%d", host.c_str(), port, (int)timeout);
     }
     
-    if ((ret = io->initialize(stfd)) != ERROR_SUCCESS) {
-        return ret;
+    if ((err = io->initialize(stfd)) != srs_success) {
+        return srs_error_wrap(err, "tcp: init socket object");
     }
     
-    return ret;
+    return err;
 }
 
 void SrsTcpClient::close()

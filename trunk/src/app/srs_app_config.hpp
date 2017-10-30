@@ -382,31 +382,31 @@ private:
     /**
      * reload the vhost section of config.
      */
-    virtual int reload_vhost(SrsConfDirective* old_root);
+    virtual srs_error_t reload_vhost(SrsConfDirective* old_root);
 protected:
     /**
      * reload from the config.
      * @remark, use protected for the utest to override with mock.
      */
-    virtual int reload_conf(SrsConfig* conf);
+    virtual srs_error_t reload_conf(SrsConfig* conf);
 private:
     /**
      * reload the http_api section of config.
      */
-    virtual int reload_http_api(SrsConfDirective* old_root);
+    virtual srs_error_t reload_http_api(SrsConfDirective* old_root);
     /**
      * reload the http_stream section of config.
      */
     // TODO: FIXME: rename to http_server.
-    virtual int reload_http_stream(SrsConfDirective* old_root);
+    virtual srs_error_t reload_http_stream(SrsConfDirective* old_root);
     /**
      * reload the transcode section of vhost of config.
      */
-    virtual int reload_transcode(SrsConfDirective* new_vhost, SrsConfDirective* old_vhost);
+    virtual srs_error_t reload_transcode(SrsConfDirective* new_vhost, SrsConfDirective* old_vhost);
     /**
      * reload the ingest section of vhost of config.
      */
-    virtual int reload_ingest(SrsConfDirective* new_vhost, SrsConfDirective* old_vhost);
+    virtual srs_error_t reload_ingest(SrsConfDirective* new_vhost, SrsConfDirective* old_vhost);
     // parse options and file
 public:
     /**
@@ -476,7 +476,7 @@ public:
     /**
      * raw set the global whether use utc time.
      */
-    virtual int raw_set_utc_time(std::string utc_time, bool& applied);
+    virtual srs_error_t raw_set_utc_time(std::string utc_time, bool& applied);
     /**
      * raw set the global pithy print interval in ms.
      */
@@ -510,17 +510,17 @@ public:
      */
     virtual int raw_disable_dvr(std::string vhost, std::string stream, bool& applied);
 private:
-    virtual int do_reload_listen();
-    virtual int do_reload_pid();
-    virtual int do_reload_srs_log_tank();
-    virtual int do_reload_srs_log_level();
-    virtual int do_reload_srs_log_file();
-    virtual int do_reload_max_connections();
-    virtual int do_reload_utc_time();
-    virtual int do_reload_pithy_print_ms();
-    virtual int do_reload_vhost_added(std::string vhost);
-    virtual int do_reload_vhost_removed(std::string vhost);
-    virtual int do_reload_vhost_dvr_apply(std::string vhost);
+    virtual srs_error_t do_reload_listen();
+    virtual srs_error_t do_reload_pid();
+    virtual srs_error_t do_reload_srs_log_tank();
+    virtual srs_error_t do_reload_srs_log_level();
+    virtual srs_error_t do_reload_srs_log_file();
+    virtual srs_error_t do_reload_max_connections();
+    virtual srs_error_t do_reload_utc_time();
+    virtual srs_error_t do_reload_pithy_print_ms();
+    virtual srs_error_t do_reload_vhost_added(std::string vhost);
+    virtual srs_error_t do_reload_vhost_removed(std::string vhost);
+    virtual srs_error_t do_reload_vhost_dvr_apply(std::string vhost);
 public:
     /**
      * get the config file path.

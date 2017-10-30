@@ -82,11 +82,10 @@ void SrsConnection::dispose()
 
 srs_error_t SrsConnection::start()
 {
-    int ret = ERROR_SUCCESS;
     srs_error_t err = srs_success;
     
-    if ((ret = skt->initialize(stfd)) != ERROR_SUCCESS) {
-        return srs_error_new(ret, "socket");
+    if ((err = skt->initialize(stfd)) != srs_success) {
+        return srs_error_wrap(err, "init socket");
     }
     
     if ((err = trd->start()) != srs_success) {
@@ -98,25 +97,27 @@ srs_error_t SrsConnection::start()
 
 srs_error_t SrsConnection::cycle()
 {
-    int ret = do_cycle();
+    srs_error_t err = do_cycle();
     
     // Notify manager to remove it.
     manager->remove(this);
     
     // success.
-    if (ret == ERROR_SUCCESS) {
+    if (err == srs_success) {
         srs_trace("client finished.");
-        return srs_success;
+        return err;
     }
     
     // client close peer.
     // TODO: FIXME: Only reset the error when client closed it.
-    if (srs_is_client_gracefully_close(ret)) {
-        srs_warn("client disconnect peer. ret=%d", ret);
-        return srs_success;
+    if (srs_is_client_gracefully_close(srs_error_code(err))) {
+        srs_warn("client disconnect peer. ret=%d", srs_error_code(err));
+    } else {
+        srs_error("connect error %s", srs_error_desc(err).c_str());
     }
     
-    return srs_error_new(ret, "cycle");
+    srs_freep(err);
+    return srs_success;
 }
 
 int SrsConnection::srs_id()

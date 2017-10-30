@@ -46,8 +46,12 @@ extern int64_t srs_get_system_startup_time_ms();
 // the deamon st-thread will update it.
 extern int64_t srs_update_system_time_ms();
 
+// the any address for listener,
+// it's "0.0.0.0" for ipv4, and "::" for ipv6.
+extern std::string srs_any_address4listener();
+
 // dns resolve utility, return the resolved ip address.
-extern std::string srs_dns_resolve(std::string host);
+extern std::string srs_dns_resolve(std::string host, int& family);
 
 // split the host:port to host and port.
 // @remark the hostport format in <host[:port]>, where port is optional.
@@ -102,7 +106,7 @@ extern std::vector<std::string> srs_string_split(std::string str, std::vector<st
 extern bool srs_bytes_equals(void* pa, void* pb, int size);
 
 // create dir recursively
-extern int srs_create_dir_recursively(std::string dir);
+extern srs_error_t srs_create_dir_recursively(std::string dir);
 
 // whether path exists.
 extern bool srs_path_exists(std::string path);

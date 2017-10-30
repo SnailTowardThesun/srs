@@ -29,6 +29,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <netdb.h>
 using namespace std;
 
 #include <srs_app_config.hpp>
@@ -157,10 +158,18 @@ SrsMpegtsOverUdp::~SrsMpegtsOverUdp()
     srs_freep(pprint);
 }
 
-int SrsMpegtsOverUdp::on_udp_packet(sockaddr_in* from, char* buf, int nb_buf)
+srs_error_t SrsMpegtsOverUdp::on_udp_packet(const sockaddr* from, const int fromlen, char* buf, int nb_buf)
 {
-    std::string peer_ip = inet_ntoa(from->sin_addr);
-    int peer_port = ntohs(from->sin_port);
+    char address_string[64];
+    char port_string[16];
+    if(getnameinfo(from, fromlen, 
+                   (char*)&address_string, sizeof(address_string),
+                   (char*)&port_string, sizeof(port_string),
+                   NI_NUMERICHOST|NI_NUMERICSERV) != 0) {
+        return srs_error_new(ERROR_SYSTEM_IP_INVALID, "bad address");
+    }
+    std::string peer_ip = std::string(address_string);
+    int peer_port = atoi(port_string);
     
     // append to buffer.
     buffer->append(buf, nb_buf);
@@ -168,12 +177,17 @@ int SrsMpegtsOverUdp::on_udp_packet(sockaddr_in* from, char* buf, int nb_buf)
     srs_info("udp: got %s:%d packet %d/%d bytes",
              peer_ip.c_str(), peer_port, nb_buf, buffer->length());
     
-    return on_udp_bytes(peer_ip, peer_port, buf, nb_buf);
+    int ret = on_udp_bytes(peer_ip, peer_port, buf, nb_buf);
+    if (ret != ERROR_SUCCESS) {
+        return srs_error_new(ret, "process udp");
+    }
+    return srs_success;
 }
 
 int SrsMpegtsOverUdp::on_udp_bytes(string host, int port, char* buf, int nb_buf)
 {
     int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     // collect nMB data to parse in a time.
     // TODO: FIXME: comment the following for release.
@@ -233,7 +247,10 @@ int SrsMpegtsOverUdp::on_udp_bytes(string host, int port, char* buf, int nb_buf)
         }
         
         // process each ts packet
-        if ((ret = context->decode(stream, this)) != ERROR_SUCCESS) {
+        if ((err = context->decode(stream, this)) != srs_success) {
+            // TODO: FIXME: Use error
+            ret = srs_error_code(err);
+            srs_freep(err);
             srs_warn("mpegts: ignore parse ts packet failed. ret=%d", ret);
             continue;
         }
@@ -249,9 +266,10 @@ int SrsMpegtsOverUdp::on_udp_bytes(string host, int port, char* buf, int nb_buf)
     return ret;
 }
 
-int SrsMpegtsOverUdp::on_ts_message(SrsTsMessage* msg)
+srs_error_t SrsMpegtsOverUdp::on_ts_message(SrsTsMessage* msg)
 {
     int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     pprint->elapse();
     
@@ -307,36 +325,35 @@ int SrsMpegtsOverUdp::on_ts_message(SrsTsMessage* msg)
     
     // when not audio/video, or not adts/annexb format, donot support.
     if (msg->stream_number() != 0) {
-        ret = ERROR_STREAM_CASTER_TS_ES;
-        srs_error("mpegts: unsupported stream format, sid=%#x(%s-%d). ret=%d",
-                  msg->sid, msg->is_audio()? "A":msg->is_video()? "V":"N", msg->stream_number(), ret);
-        return ret;
+        return srs_error_new(ERROR_STREAM_CASTER_TS_ES, "ts: unsupported stream format, sid=%#x(%s-%d)",
+            msg->sid, msg->is_audio()? "A":msg->is_video()? "V":"N", msg->stream_number());
     }
     
     // check supported codec
     if (msg->channel->stream != SrsTsStreamVideoH264 && msg->channel->stream != SrsTsStreamAudioAAC) {
-        ret = ERROR_STREAM_CASTER_TS_CODEC;
-        srs_error("mpegts: unsupported stream codec=%d. ret=%d", msg->channel->stream, ret);
-        return ret;
+        return srs_error_new(ERROR_STREAM_CASTER_TS_CODEC, "ts: unsupported stream codec=%d", msg->channel->stream);
     }
     
     // parse the stream.
     SrsBuffer avs;
     if ((ret = avs.initialize(msg->payload->bytes(), msg->payload->length())) != ERROR_SUCCESS) {
-        srs_error("mpegts: initialize av stream failed. ret=%d", ret);
-        return ret;
+        return srs_error_new(ret, "ts: init av stream");
     }
     
     // publish audio or video.
     if (msg->channel->stream == SrsTsStreamVideoH264) {
-        return on_ts_video(msg, &avs);
+        if ((ret = on_ts_video(msg, &avs)) != ERROR_SUCCESS) {
+            return srs_error_new(ret, "ts: consume video");
+        }
     }
     if (msg->channel->stream == SrsTsStreamAudioAAC) {
-        return on_ts_audio(msg, &avs);
+        if ((ret = on_ts_audio(msg, &avs)) != ERROR_SUCCESS) {
+            return srs_error_new(ret, "ts: consume audio");
+        }
     }
     
     // TODO: FIXME: implements it.
-    return ret;
+    return err;
 }
 
 int SrsMpegtsOverUdp::on_ts_video(SrsTsMessage* msg, SrsBuffer* avs)
@@ -567,6 +584,7 @@ int SrsMpegtsOverUdp::write_audio_raw_frame(char* frame, int frame_size, SrsRawA
 int SrsMpegtsOverUdp::rtmp_write_packet(char type, uint32_t timestamp, char* data, int size)
 {
     int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     if ((ret = connect()) != ERROR_SUCCESS) {
         return ret;
@@ -598,8 +616,11 @@ int SrsMpegtsOverUdp::rtmp_write_packet(char type, uint32_t timestamp, char* dat
         }
         
         // send out encoded msg.
-        if ((ret = sdk->send_and_free_message(msg)) != ERROR_SUCCESS) {
+        if ((err = sdk->send_and_free_message(msg)) != srs_success) {
             close();
+            // TODO: FIXME: Use error
+            ret = srs_error_code(err);
+            srs_freep(err);
             return ret;
         }
     }
@@ -610,6 +631,7 @@ int SrsMpegtsOverUdp::rtmp_write_packet(char type, uint32_t timestamp, char* dat
 int SrsMpegtsOverUdp::connect()
 {
     int ret = ERROR_SUCCESS;
+    srs_error_t err = srs_success;
     
     // Ignore when connected.
     if (sdk) {
@@ -620,14 +642,20 @@ int SrsMpegtsOverUdp::connect()
     int64_t sto = SRS_CONSTS_RTMP_PULSE_TMMS;
     sdk = new SrsSimpleRtmpClient(output, cto, sto);
     
-    if ((ret = sdk->connect()) != ERROR_SUCCESS) {
+    if ((err = sdk->connect()) != srs_success) {
         close();
+        // TODO: FIXME: Use error
+        ret = srs_error_code(err);
+        srs_freep(err);
         srs_error("mpegts: connect %s failed, cto=%" PRId64 ", sto=%" PRId64 ". ret=%d", output.c_str(), cto, sto, ret);
         return ret;
     }
     
-    if ((ret = sdk->publish()) != ERROR_SUCCESS) {
+    if ((err = sdk->publish()) != srs_success) {
         close();
+        // TODO: FIXME: Use error
+        ret = srs_error_code(err);
+        srs_freep(err);
         srs_error("mpegts: publish failed. ret=%d", ret);
         return ret;
     }

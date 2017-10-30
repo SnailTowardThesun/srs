@@ -26,6 +26,7 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <ifaddrs.h>
+#include <netdb.h>
 #include <map>
 #include <sstream>
 using namespace std;
@@ -61,44 +62,53 @@ bool srs_net_device_is_internet(string ifname)
     return _srs_device_ifs[ifname];
 }
 
-bool srs_net_device_is_internet(in_addr_t addr)
+bool srs_net_device_is_internet(const sockaddr* addr)
 {
-    uint32_t addr_h = ntohl(addr);
-    
-    // lo, 127.0.0.0-127.0.0.1
-    if (addr_h >= 0x7f000000 && addr_h <= 0x7f000001) {
-        return false;
-    }
-    
-    // Class A 10.0.0.0-10.255.255.255
-    if (addr_h >= 0x0a000000 && addr_h <= 0x0affffff) {
-        return false;
-    }
-    
-    // Class B 172.16.0.0-172.31.255.255
-    if (addr_h >= 0xac100000 && addr_h <= 0xac1fffff) {
-        return false;
-    }
-    
-    // Class C 192.168.0.0-192.168.255.255
-    if (addr_h >= 0xc0a80000 && addr_h <= 0xc0a8ffff) {
-        return false;
+    if(addr->sa_family == AF_INET) {
+        const in_addr inaddr = ((sockaddr_in*)addr)->sin_addr;
+        const uint32_t addr_h = ntohl(inaddr.s_addr);
+
+        // lo, 127.0.0.0-127.0.0.1
+        if (addr_h >= 0x7f000000 && addr_h <= 0x7f000001) {
+            return false;
+        }
+
+        // Class A 10.0.0.0-10.255.255.255
+        if (addr_h >= 0x0a000000 && addr_h <= 0x0affffff) {
+            return false;
+        }
+
+        // Class B 172.16.0.0-172.31.255.255
+        if (addr_h >= 0xac100000 && addr_h <= 0xac1fffff) {
+            return false;
+        }
+
+        // Class C 192.168.0.0-192.168.255.255
+        if (addr_h >= 0xc0a80000 && addr_h <= 0xc0a8ffff) {
+            return false;
+        }
+    } else if(addr->sa_family == AF_INET6) {
+        const sockaddr_in6* a6 = (const sockaddr_in6*)addr;
+        if ((IN6_IS_ADDR_LINKLOCAL(&a6->sin6_addr)) ||
+            (IN6_IS_ADDR_SITELOCAL(&a6->sin6_addr))) {
+           return false;
+        }
     }
     
     return true;
 }
 
-vector<string> _srs_system_ipv4_ips;
+vector<string> _srs_system_ips;
 
-void retrieve_local_ipv4_ips()
+void retrieve_local_ips()
 {
-    vector<string>& ips = _srs_system_ipv4_ips;
+    vector<string>& ips = _srs_system_ips;
     
     ips.clear();
     
     ifaddrs* ifap;
     if (getifaddrs(&ifap) == -1) {
-        srs_warn("retrieve local ips, ini ifaddrs failed.");
+        srs_warn("retrieve local ips, getifaddrs failed.");
         return;
     }
     
@@ -111,32 +121,30 @@ void retrieve_local_ipv4_ips()
     ifaddrs* p = ifap;
     while (p != NULL) {
         ifaddrs* cur = p;
-        sockaddr* addr = cur->ifa_addr;
         p = p->ifa_next;
         
-        // retrieve ipv4 addr
+        // retrieve IP address
         // ignore the tun0 network device,
         // which addr is NULL.
         // @see: https://github.com/ossrs/srs/issues/141
-        if (addr && addr->sa_family == AF_INET) {
-            in_addr* inaddr = &((sockaddr_in*)addr)->sin_addr;
-            
-            char buf[16];
-            memset(buf, 0, sizeof(buf));
-            
-            if ((inet_ntop(addr->sa_family, inaddr, buf, sizeof(buf))) == NULL) {
-                srs_warn("convert local ip failed");
+        if ((cur->ifa_addr) && ((cur->ifa_addr->sa_family == AF_INET) || (cur->ifa_addr->sa_family == AF_INET6))) {
+            char saddr[64];
+            char* h = (char*)saddr;
+            socklen_t nbh = (socklen_t)sizeof(saddr);
+            const int r0 = getnameinfo(cur->ifa_addr, sizeof(sockaddr_storage), h, nbh, NULL, 0, NI_NUMERICHOST);
+            if(r0 != 0) {
+                srs_warn("convert local ip failed: %s", gai_strerror(r0));
                 break;
             }
             
-            std::string ip = buf;
+            std::string ip = saddr;
             if (ip != SRS_CONSTS_LOCALHOST) {
                 ss0 << ", local[" << (int)ips.size() << "] ipv4 " << ip;
                 ips.push_back(ip);
             }
             
             // set the device internet status.
-            if (!srs_net_device_is_internet(inaddr->s_addr)) {
+            if (!srs_net_device_is_internet(cur->ifa_addr)) {
                 ss1 << ", intranet ";
                 _srs_device_ifs[cur->ifa_name] = false;
             } else {
@@ -152,13 +160,13 @@ void retrieve_local_ipv4_ips()
     freeifaddrs(ifap);
 }
 
-vector<string>& srs_get_local_ipv4_ips()
+vector<string>& srs_get_local_ips()
 {
-    if (_srs_system_ipv4_ips.empty()) {
-        retrieve_local_ipv4_ips();
+    if (_srs_system_ips.empty()) {
+        retrieve_local_ips();
     }
     
-    return _srs_system_ipv4_ips;
+    return _srs_system_ips;
 }
 
 std::string _public_internet_address;
@@ -169,7 +177,7 @@ string srs_get_public_internet_address()
         return _public_internet_address;
     }
     
-    std::vector<std::string>& ips = srs_get_local_ipv4_ips();
+    std::vector<std::string>& ips = srs_get_local_ips();
     
     // find the best match public address.
     for (int i = 0; i < (int)ips.size(); i++) {
